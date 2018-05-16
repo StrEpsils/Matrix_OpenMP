@@ -43,17 +43,20 @@ int wrachenie(double **coefficients, int numberOfEquation,
     }
     double **temp;
     temp = new double *[numberOfEquation];
+
     #pragma omp parallel for
     for (i = 0; i < numberOfEquation; i++)
     {
         temp[i] = new double[numberOfEquation];
     }
     double fault = 0.0;
+
+    #pragma omp parallel for reduction (+:fault)
     for (i = 0; i < numberOfEquation; i++)
     {
         for (j = i + 1; j < numberOfEquation; j++)
         {
-            fault = fault + coefficients[i][j] * coefficients[i][j];
+            fault += coefficients[i][j] * coefficients[i][j];
         }
     }
     fault = sqrt(2 * fault);
@@ -62,7 +65,8 @@ int wrachenie(double **coefficients, int numberOfEquation,
     while (fault > precision)
     {
         max = 0.0;
-        #pragma omp for
+
+        #pragma omp critical
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = i + 1; j < numberOfEquation; j++)
@@ -81,7 +85,6 @@ int wrachenie(double **coefficients, int numberOfEquation,
                 }
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
@@ -104,7 +107,6 @@ int wrachenie(double **coefficients, int numberOfEquation,
             matricaPoworota[maxI][maxJ] = -sin(fi);
             matricaPoworota[maxJ][maxI] = sin(fi);
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
@@ -112,18 +114,16 @@ int wrachenie(double **coefficients, int numberOfEquation,
                 temp[i][j] = 0.0;
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
             {
                 for (k = 0; k < numberOfEquation; k++)
                 {
-                    temp[i][j] = temp[i][j] + matricaPoworota[k][i] * coefficients[k][j];
+                    temp[i][j] += matricaPoworota[k][i] * coefficients[k][j];
                 }
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
@@ -131,50 +131,50 @@ int wrachenie(double **coefficients, int numberOfEquation,
                 coefficients[i][j] = 0.0;
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
             {
                 for (k = 0; k < numberOfEquation; k++)
                 {
-                    coefficients[i][j] = coefficients[i][j] +
-                                         temp[i][k] * matricaPoworota[k][j];
+                    coefficients[i][j] += temp[i][k] * matricaPoworota[k][j];
                 }
             }
         }
+
         fault = 0.0;
-        #pragma omp for
+        #pragma omp parallel for shared(fault)
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = i + 1; j < numberOfEquation; j++)
             {
-                fault = fault + coefficients[i][j] * coefficients[i][j];
+                fault += coefficients[i][j] * coefficients[i][j];
             }
         }
         fault = sqrt(2 * fault);
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
+            #pragma omp parallel shared(temp)
             for (j = 0; j < numberOfEquation; j++)
             {
                 temp[i][j] = 0.0;
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
             for (j = 0; j < numberOfEquation; j++)
             {
+//                #pragma omp parallel shared(temp)
                 for (k = 0; k < numberOfEquation; k++)
                 {
-                    temp[i][j] = temp[i][j] + solution[i][k] * matricaPoworota[k][j];
+//                    #pragma omp critical
+                    temp[i][j] += solution[i][k] * matricaPoworota[k][j];
                 }
             }
         }
-        #pragma omp for
         for (i = 0; i < numberOfEquation; i++)
         {
+            #pragma omp parallel shared(solution)
             for (j = 0; j < numberOfEquation; j++)
             {
                 solution[i][j] = temp[i][j];
@@ -191,6 +191,15 @@ using namespace std;
 int main()
 {
     setlocale(LC_ALL, "rus");
+
+    srand(time(NULL));
+
+    #ifdef _OPENMP
+        cout << "OpenMP is enabled\n";
+        omp_set_num_threads(4);
+    #endif
+
+
     int i, j;
     int size;
     double **coefficients, **solution, precision;
@@ -200,11 +209,13 @@ int main()
     coefficients = new double *[size];
     solution = new double *[size];
 
+    #pragma omp parallel for
     for (i = 0; i < size; i++)
     {
         coefficients[i] = new double[size];
         solution[i] = new double[size];
     }
+
     for (i = 0; i < size; i++)
     {
         for (j = 0; j < size; j++)
